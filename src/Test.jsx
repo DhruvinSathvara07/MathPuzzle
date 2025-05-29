@@ -254,7 +254,107 @@ const Test = () => {
       setWrongConnection(null);
     }
   };
+  const handleTouchStart = (e, problem) => {
+    e.preventDefault();
+    if (solvedProblems.includes(problem.id)) return;
 
+    const rect = svgRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const startX = problem.position.x;
+    const startY = problem.position.y;
+
+    setIsDrawing(true);
+    setStartPoint({
+      x: startX,
+      y: startY,
+      problemId: problem.id,
+      answer: problem.answer,
+    });
+    setCurrentPath(`M ${startX} ${startY}`);
+  };
+
+  const handleTouchMove = (e) => {
+    e.preventDefault();
+    if (!isDrawing || !startPoint) return;
+
+    const rect = svgRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const currentX = touch.clientX - rect.left;
+    const currentY = touch.clientY - rect.top;
+
+    setCurrentPath(
+      `M ${startPoint.x} ${startPoint.y} L ${currentX} ${currentY}`
+    );
+  };
+
+  const handleTouchEnd = (e) => {
+    e.preventDefault();
+    if (!isDrawing || !startPoint) return;
+
+    const rect = svgRef.current.getBoundingClientRect();
+    const touch = e.changedTouches[0];
+    const endX = touch.clientX - rect.left;
+    const endY = touch.clientY - rect.top;
+
+    const targetBasket = baskets.find((basket) => {
+      const distance = Math.sqrt(
+        Math.pow(endX - basket.position.x, 2) +
+          Math.pow(endY - basket.position.y, 2)
+      );
+      return distance < 70;
+    });
+
+    if (targetBasket) {
+      const isCorrect = startPoint.answer === targetBasket.value;
+
+      if (isCorrect) {
+        const newConnection = {
+          id: Date.now(),
+          problemId: startPoint.problemId,
+          basketId: targetBasket.id,
+          path: `M ${startPoint.x} ${startPoint.y} Q ${
+            (startPoint.x + targetBasket.position.x) / 2
+          } ${startPoint.y - 50} ${targetBasket.position.x} ${
+            targetBasket.position.y
+          }`,
+          correct: true,
+        };
+
+        setConnections((prev) => [...prev, newConnection]);
+        setScore((prev) => prev + 20);
+        playSound("correct");
+
+        const solvedCount = connections.filter((c) => c.correct).length + 1;
+        if (solvedCount >= currentProblems.length) {
+          setTimeout(() => {
+            setGameCompleted(true);
+            playSound("complete");
+          }, 500);
+        }
+      } else {
+        playSound("wrong");
+        setShakeBasket(targetBasket.id);
+        setTimeout(() => setShakeBasket(null), 500);
+
+        setLives((prev) => Math.max(0, prev - 1));
+
+        const wrongConn = {
+          id: Date.now(),
+          problemId: startPoint.problemId,
+          basketId: targetBasket.id,
+          path: `M ${startPoint.x} ${startPoint.y} L ${targetBasket.position.x} ${targetBasket.position.y}`,
+          correct: false,
+        };
+
+        setWrongConnection(wrongConn);
+        setTimeout(() => setWrongConnection(null), 800);
+      }
+    }
+
+    setIsDrawing(false);
+    setCurrentPath("");
+    setStartPoint(null);
+  };
   const solvedProblems = connections
     .filter((c) => c.correct)
     .map((c) => c.problemId);
@@ -400,6 +500,8 @@ const Test = () => {
               }`}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
               onMouseLeave={() => {
                 setIsDrawing(false);
                 setCurrentPath("");
@@ -510,6 +612,9 @@ const Test = () => {
                       className="select-none"
                       onMouseDown={(e) =>
                         !isSolved && handleMouseDown(e, problem)
+                      }
+                      onTouchStart={(e) =>
+                        !isSolved && handleTouchStart(e, problem)
                       }
                     >
                       {problem.problem}
